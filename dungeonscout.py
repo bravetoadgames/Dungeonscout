@@ -173,7 +173,7 @@ class GameWorld:
 class GameLogic:
     def __init__(self, root):
         self.root = root
-        self.root.title("Python Roguelike - English Edition")
+        self.root.title("DungeonScout - English Edition")
         self.world = GameWorld()
         self.player = None
         self.level_num = 1
@@ -256,7 +256,7 @@ class GameLogic:
         self.game_state = "menu"
         self.mm_canvas.place_forget()
         self.canvas.delete("all")
-        self.canvas.create_text(500, 340, text="THE DARK DUNGEON", fill="white", font=("Courier", 32, "bold"))
+        self.canvas.create_text(500, 340, text="DUNGEONSCOUT", fill="white", font=("Courier", 32, "bold"))
         self.canvas.create_text(500, 400, text="[ PRESS ENTER ]", fill="gray", font=("Courier", 18))
 
     def start_game(self):
