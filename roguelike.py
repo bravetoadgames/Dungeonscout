@@ -32,21 +32,6 @@ class Entity:
         self.y = y
         self.sprite_key = sprite_key
 
-class Protagonist(Entity):
-    def __init__(self, x, y):
-        super().__init__(x, y, 'player')
-        self.hp = SETTINGS["max_hp"]
-        self.gold = 0
-        self.inventory = {"potions": 0}
-
-    def use_potion(self):
-        if self.inventory["potions"] > 0 and self.hp < SETTINGS["max_hp"]:
-            self.inventory["potions"] -= 1
-            heal = 10
-            self.hp = min(SETTINGS["max_hp"], self.hp + heal)
-            return f"Lekker! +{heal} HP."
-        return None
-
 class Enemy(Entity):
     def __init__(self, x, y):
         super().__init__(x, y, 'monster')
@@ -66,9 +51,25 @@ class Item(Entity):
         super().__init__(x, y, mapping.get(item_type, 'floor'))
         self.item_type = item_type
 
+class Protagonist(Entity):
+    def __init__(self, x, y):
+        super().__init__(x, y, 'player')
+        self.hp = SETTINGS["max_hp"]
+        self.gold = 0
+        self.inventory = {"potions": 0}
+
+    def use_potion(self):
+        if self.inventory["potions"] > 0 and self.hp < SETTINGS["max_hp"]:
+            self.inventory["potions"] -= 1
+            heal = 10
+            self.hp = min(SETTINGS["max_hp"], self.hp + heal)
+            return f"Lekker! +{heal} HP."
+        return None
+
 # ==========================================
 # 2. GAME WORLD (Data & Generatie)
 # ==========================================
+
 class GameWorld:
     def __init__(self):
         self.width = SETTINGS["map_width"]
@@ -78,44 +79,30 @@ class GameWorld:
         self.items = []
         self.enemies = []
 
-    # --- De Hoofdrolspeler: Level Generatie ---
-    
     def generate_level(self):
-        """De 'Master' functie die het proces regisseert."""
         self._reset_level_data()
-        
         rooms = self._generate_rooms(max_rooms=25)
-        
         if rooms:
             self._place_exit(rooms[-1])
             self._populate_rooms(rooms[1:-1])
             return self._get_room_center(rooms[0])
-        
         return (1, 1)
 
-
     def is_walkable(self, x, y):
-        """Checkt of een tegel begaanbaar is."""
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x] == "."
         return False
 
     def update_fov(self, px, py):
-        """Update welke tegels de speler kan zien."""
         rad = SETTINGS["fov_radius"]
         for y in range(max(0, py - rad), min(self.height, py + rad + 1)):
             for x in range(max(0, px - rad), min(self.width, px + rad + 1)):
                 if math.sqrt((py - y)**2 + (px - x)**2) <= rad:
                     self.discovered[y][x] = True
 
-
-    # --- Hulpfuncties voor Generatie ---
     def _create_tunnel(self, r1, r2):
-        """Verbindt twee kamers met een horizontale en verticale gang."""
         x1, y1 = self._get_room_center(r1)
         x2, y2 = self._get_room_center(r2)
-
-        # Horizontaal eerst, dan verticaal (of andersom)
         if random.random() > 0.5:
             self._dig_h_line(x1, x2, y1)
             self._dig_v_line(y1, y2, x2)
@@ -146,11 +133,9 @@ class GameWorld:
             rw, rh = random.randint(5, 10), random.randint(4, 7)
             rx, ry = random.randint(1, self.width - rw - 1), random.randint(1, self.height - rh - 1)
             new_room = {'x1': rx, 'y1': ry, 'x2': rx + rw, 'y2': ry + rh}
-
             if not self._does_overlap(new_room, rooms):
                 self._dig_room(new_room)
-                if rooms:
-                    self._create_tunnel(rooms[-1], new_room)
+                if rooms: self._create_tunnel(rooms[-1], new_room)
                 rooms.append(new_room)
         return rooms
 
@@ -165,23 +150,15 @@ class GameWorld:
         for room in rooms:
             rx, ry = room['x1'] + 1, room['y1'] + 1
             chance = random.random()
-            if chance < 0.3:
-                self.enemies.append(Enemy(rx, ry))
-            elif chance < 0.4:
-                self.items.append(Item(rx, ry, "P"))
-            elif chance < 0.5:
-                self.items.append(Item(rx, ry, "$"))
+            if chance < 0.3: self.enemies.append(Enemy(rx, ry))
+            elif chance < 0.4: self.items.append(Item(rx, ry, "P"))
+            elif chance < 0.5: self.items.append(Item(rx, ry, "$"))
 
     def _reset_level_data(self):
         self.tiles = [["#" for _ in range(self.width)] for _ in range(self.height)]
         self.discovered = [[False for _ in range(self.width)] for _ in range(self.height)]
         self.items = []
         self.enemies = []
-
-    # --- Runtime Functies (voor tijdens het spelen) ---
-
-
-
 
 # ==========================================
 # 3. GAME LOGIC (Controller & UI)
@@ -203,20 +180,117 @@ class GameLogic:
         self._load_assets()
         self.show_menu()
 
-    def _setup_ui(self):
-        self.canvas = tk.Canvas(self.root, bg="black", highlightthickness=0)
-        self.canvas.pack(fill=tk.BOTH, expand=True)
+    def handle_input(self, event):
+        key = event.keysym
+        if key == 'Escape': self.root.destroy(); return
+        if self.game_state == "menu" and key in ['Return', 'KP_Enter']:
+            self.start_game()
+        elif self.game_state == "gameover" and key in ['Return', 'KP_Enter']:
+            self.show_menu()
+        elif self.game_state == "playing":
+            k = key.lower()
+            if k in ['w', 'a', 's', 'd']:
+                dx, dy = {'w':(0,-1), 's':(0,1), 'a':(-1,0), 'd':(1,0)}[k]
+                self.turn(dx, dy)
+            elif k == 'h':
+                res = self.player.use_potion()
+                if res: self.message = res
+                self.render()
+
+    def next_level(self):
+        px, py = self.world.generate_level()
+        self.player.x, self.player.y = px, py
+        self.world.update_fov(px, py)
+        self.render()
+
+    def render(self):
+        self.canvas.delete("all")
+        if self.game_state == "gameover":
+            self.mm_canvas.place_forget()
+            self.status_label.config(text=f"LVL: {self.level_num} | HP: 0/{SETTINGS['max_hp']} | GOUD: {self.player.gold} | GAME OVER", fg="red")
+            self.canvas.create_text(500, 350, text="GAME OVER", fill="red", font=("Courier", 40, "bold"))
+            return
+
+        ts = SETTINGS["tile_size"]
         
-        self.status_label = tk.Label(self.root, font=("Courier", 12, "bold"), fg="white", bg=COLORS["status_bg"], pady=5)
-        self.status_label.pack(fill=tk.X)
+        # Dynamische camera berekening (Punt 2)
+        c_width = self.canvas.winfo_width()
+        c_height = self.canvas.winfo_height()
+        tiles_x = (c_width // ts) + 1
+        tiles_y = (c_height // ts) + 1
         
-        # Minimap Canvas
-        mm_w = SETTINGS["map_width"] * SETTINGS["minimap_scale"]
-        mm_h = SETTINGS["map_height"] * SETTINGS["minimap_scale"]
-        self.mm_canvas = tk.Canvas(self.root, width=mm_w, height=mm_h, bg=COLORS["mm_bg"], highlightthickness=1, highlightbackground="gray")
+        ox = self.player.x - (tiles_x // 2)
+        oy = self.player.y - (tiles_y // 2)
+
+        for y in range(oy, oy + tiles_y + 1):
+            for x in range(ox, ox + tiles_x + 1):
+                if 0 <= x < self.world.width and 0 <= y < self.world.height and self.world.discovered[y][x]:
+                    dx, dy = (x-ox)*ts, (y-oy)*ts
+                    tile_key = 'floor' if self.world.tiles[y][x] == "." else 'wall'
+                    self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[tile_key])
+                    item = next((i for i in self.world.items if i.x == x and i.y == y), None)
+                    if item: self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[item.sprite_key])
+
+        for e in self.world.enemies:
+            if self.world.discovered[e.y][e.x]:
+                self.canvas.create_image((e.x-ox)*ts, (e.y-oy)*ts, anchor="nw", image=self.sprites['monster'])
+
+        self.canvas.create_image((self.player.x-ox)*ts, (self.player.y-oy)*ts, anchor="nw", image=self.sprites['player'])
         
-        self.root.bind("<KeyPress>", self.handle_input)
-        self.canvas.focus_set()
+        stat = f"LVL: {self.level_num} | HP: {self.player.hp}/{SETTINGS['max_hp']} | POTIONS: {self.player.inventory['potions']} | GOUD: {self.player.gold} | {self.message}"
+        self.status_label.config(text=stat, fg="white")
+        self._render_minimap()
+
+    def show_menu(self):
+        self.game_state = "menu"
+        self.mm_canvas.place_forget()
+        self.canvas.delete("all")
+        self.canvas.create_text(500, 340, text="DE DONKERE KERKER", fill="white", font=("Courier", 32, "bold"))
+        self.canvas.create_text(500, 400, text="[ DRUK OP ENTER ]", fill="gray", font=("Courier", 18))
+
+    def start_game(self):
+        self.game_state = "playing"
+        self.player = Protagonist(0, 0)
+        self.level_num = 1
+        self.message = "Vind de trap omlaag!"
+        self.next_level()
+        self._toggle_minimap_player_blink()
+
+    def turn(self, dx, dy):
+        nx, ny = self.player.x + dx, self.player.y + dy
+        enemy = next((e for e in self.world.enemies if e.x == nx and e.y == ny), None)
+        if enemy:
+            dmg = random.randint(4, 8)
+            self.player.hp -= dmg
+            self.world.enemies.remove(enemy)
+            self.message = f"Gevecht! -{dmg} HP."
+        elif self.world.is_walkable(nx, ny):
+            self.player.x, self.player.y = nx, ny
+            self._check_items()
+
+        if self.player.hp <= 0:
+            self.player.hp = 0
+            self.game_state = "gameover"
+        else:
+            for e in self.world.enemies: e.act(self.player, self.world)
+            self.world.update_fov(self.player.x, self.player.y)
+        self.render()
+
+    def _check_items(self):
+        item = next((i for i in self.world.items if i.x == self.player.x and i.y == self.player.y), None)
+        if item:
+            if item.item_type == ">":
+                self.level_num += 1
+                self.next_level()
+            elif item.item_type == "P":
+                self.player.inventory["potions"] += 1
+                self.message = "Potion gevonden!"
+                self.world.items.remove(item)
+            elif item.item_type == "$":
+                val = random.randint(10, 25)
+                self.player.gold += val
+                self.message = f"Goud! (+{val})"
+                self.world.items.remove(item)
 
     def _load_assets(self):
         filename = "roguelike_spritesheet.png"
@@ -235,150 +309,45 @@ class GameLogic:
             }
         except: pass
 
-    def show_menu(self):
-        self.game_state = "menu"
-        self.mm_canvas.place_forget()
-        self.canvas.delete("all")
-        self.canvas.create_text(500, 340, text="DE DONKERE KERKER", fill="white", font=("Courier", 32, "bold"))
-        self.canvas.create_text(500, 400, text="[ DRUK OP ENTER ]", fill="gray", font=("Courier", 18))
-
-    def start_game(self):
-        self.game_state = "playing"
-        self.player = Protagonist(0, 0)
-        self.level_num = 1
-        self.message = "Vind de trap omlaag!"
-        self.next_level() # Eerst level genereren en renderen
-        self._toggle_minimap_player_blink() # Dan pas de blinker aanzetten
-
-    def next_level(self):
-        px, py = self.world.generate_level()
-        self.player.x, self.player.y = px, py
-        self.world.update_fov(px, py)
-        self.render()
-
-    def handle_input(self, event):
-        key = event.keysym
-        if key == 'Escape': self.root.destroy(); return
-
-        if self.game_state == "menu" and key in ['Return', 'KP_Enter']:
-            self.start_game()
-        elif self.game_state == "gameover" and key in ['Return', 'KP_Enter']:
-            self.show_menu()
-        elif self.game_state == "playing":
-            k = key.lower()
-            if k in ['w', 'a', 's', 'd']:
-                dx, dy = {'w':(0,-1), 's':(0,1), 'a':(-1,0), 'd':(1,0)}[k]
-                self.turn(dx, dy)
-            elif k == 'h':
-                res = self.player.use_potion()
-                if res: self.message = res
-                self.render()
-
-    def turn(self, dx, dy):
-        nx, ny = self.player.x + dx, self.player.y + dy
-        enemy = next((e for e in self.world.enemies if e.x == nx and e.y == ny), None)
-        
-        if enemy:
-            dmg = random.randint(4, 8)
-            self.player.hp -= dmg
-            self.world.enemies.remove(enemy)
-            self.message = f"Gevecht! -{dmg} HP."
-        elif self.world.is_walkable(nx, ny):
-            self.player.x, self.player.y = nx, ny
-            self._check_items()
-
-        if self.player.hp <= 0:
-            self.player.hp = 0
-            self.game_state = "gameover"
-        else:
-            for e in self.world.enemies: e.act(self.player, self.world)
-            self.world.update_fov(self.player.x, self.player.y)
-        
-        self.render()
-
-    def _check_items(self):
-        item = next((i for i in self.world.items if i.x == self.player.x and i.y == self.player.y), None)
-        if item:
-            if item.item_type == ">":
-                self.level_num += 1
-                self.next_level()
-            elif item.item_type == "P":
-                self.player.inventory["potions"] += 1
-                self.message = "Potion gevonden!"
-                self.world.items.remove(item)
-            elif item.item_type == "$":
-                val = random.randint(10, 25)
-                self.player.gold += val
-                self.message = f"Goud gevonden! (+{val})"
-                self.world.items.remove(item)
-
     def _render_minimap(self):
         if self.game_state != "playing" or not self.world.tiles:
             self.mm_canvas.place_forget()
             return
         if not self.mm_canvas.winfo_ismapped():
             self.mm_canvas.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
-        
         self.mm_canvas.delete("all")
         sc = SETTINGS["minimap_scale"]
-        
-        # Gebruik de werkelijke lengte van de data voor veiligheid
         for y in range(len(self.world.tiles)):
             for x in range(len(self.world.tiles[y])):
                 if self.world.discovered[y][x]:
                     color = COLORS["mm_floor"] if self.world.tiles[y][x] == "." else COLORS["mm_wall"]
                     self.mm_canvas.create_rectangle(x*sc, y*sc, x*sc+sc, y*sc+sc, fill=color, outline="")
-        
-        # ... (rest van de functie blijft gelijk: items, enemies, player)
         for i in self.world.items:
             if 0 <= i.y < len(self.world.discovered) and self.world.discovered[i.y][i.x]:
                 c = "yellow" if i.item_type in ["P", "$"] else COLORS["mm_exit"]
                 self.mm_canvas.create_rectangle(i.x*sc, i.y*sc, i.x*sc+sc, i.y*sc+sc, fill=c, outline="")
-        
         for e in self.world.enemies:
             if 0 <= e.y < len(self.world.discovered) and self.world.discovered[e.y][e.x]:
                 self.mm_canvas.create_rectangle(e.x*sc, e.y*sc, e.x*sc+sc, e.y*sc+sc, fill="red", outline="")
-
         if self.player and self.player_visible_on_mm:
             self.mm_canvas.create_rectangle(self.player.x*sc, self.player.y*sc, self.player.x*sc+sc, self.player.y*sc+sc, fill="cyan", outline="white")
-            
-            
+
+    def _setup_ui(self):
+        self.canvas = tk.Canvas(self.root, bg="black", highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.status_label = tk.Label(self.root, font=("Courier", 12, "bold"), fg="white", bg=COLORS["status_bg"], pady=5)
+        self.status_label.pack(fill=tk.X)
+        mm_w = SETTINGS["map_width"] * SETTINGS["minimap_scale"]
+        mm_h = SETTINGS["map_height"] * SETTINGS["minimap_scale"]
+        self.mm_canvas = tk.Canvas(self.root, width=mm_w, height=mm_h, bg=COLORS["mm_bg"], highlightthickness=1, highlightbackground="gray")
+        self.root.bind("<KeyPress>", self.handle_input)
+        self.canvas.focus_set()
+
     def _toggle_minimap_player_blink(self):
         if self.game_state == "playing":
             self.player_visible_on_mm = not self.player_visible_on_mm
             self._render_minimap()
             self.root.after(500, self._toggle_minimap_player_blink)
-
-    def render(self):
-        self.canvas.delete("all")
-        if self.game_state == "gameover":
-            self.mm_canvas.place_forget()
-            self.status_label.config(text=f"LVL: {self.level_num} | HP: 0/{SETTINGS['max_hp']} | GOUD: {self.player.gold} | JE BENT GESNEUVELD...", fg="red")
-            self.canvas.create_rectangle(0, 0, 1000, 750, fill="black", stipple="gray50")
-            self.canvas.create_text(500, 350, text="GAME OVER", fill="red", font=("Courier", 40, "bold"))
-            return
-
-        ts = SETTINGS["tile_size"]
-        ox, oy = self.player.x - 10, self.player.y - 7 # Camera offsets
-
-        for y in range(oy, oy + 20):
-            for x in range(ox, ox + 30):
-                if 0 <= x < self.world.width and 0 <= y < self.world.height and self.world.discovered[y][x]:
-                    dx, dy = (x-ox)*ts, (y-oy)*ts
-                    tile_key = 'floor' if self.world.tiles[y][x] == "." else 'wall'
-                    self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[tile_key])
-                    item = next((i for i in self.world.items if i.x == x and i.y == y), None)
-                    if item: self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[item.sprite_key])
-
-        for e in self.world.enemies:
-            if self.world.discovered[e.y][e.x]:
-                self.canvas.create_image((e.x-ox)*ts, (e.y-oy)*ts, anchor="nw", image=self.sprites['monster'])
-
-        self.canvas.create_image((self.player.x-ox)*ts, (self.player.y-oy)*ts, anchor="nw", image=self.sprites['player'])
-        
-        stat = f"LVL: {self.level_num} | HP: {self.player.hp}/{SETTINGS['max_hp']} | POTIONS: {self.player.inventory['potions']} | GOUD: {self.player.gold} | {self.message}"
-        self.status_label.config(text=stat, fg="white")
-        self._render_minimap()
 
 if __name__ == "__main__":
     root = tk.Tk()
