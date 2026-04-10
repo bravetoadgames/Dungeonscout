@@ -181,6 +181,18 @@ class GameLogic:
         self.game_state = "menu"
         self.sprites = {}
         self.player_visible_on_mm = True
+        
+        # Sprite coordinates (Column, Row) on a 48x48 grid
+        self.sprite_size = SETTINGS["tile_size"]
+        self.SPRITE_MAP = {
+            'player':  (0, 0),
+            'monster': (1, 0),
+            'floor':   (0, 1),
+            'wall':    (1, 1),
+            'exit':    (2, 1),
+            'potion':  (0, 2),
+            'gold':    (1, 2),
+        }
 
         self._setup_ui()
         self._load_assets()
@@ -221,7 +233,7 @@ class GameLogic:
         ts = SETTINGS["tile_size"]
         
         # Dynamic camera calculation
-        c_width = max(self.canvas.winfo_width(), 100) # Fallback to 100 if not yet mapped
+        c_width = max(self.canvas.winfo_width(), 100)
         c_height = max(self.canvas.winfo_height(), 100)
         tiles_x = (c_width // ts) + 1
         tiles_y = (c_height // ts) + 1
@@ -229,23 +241,29 @@ class GameLogic:
         ox = self.player.x - (tiles_x // 2)
         oy = self.player.y - (tiles_y // 2)
 
-        # Draw World
+        # Draw World (Tiles & Items)
         for y in range(oy, oy + tiles_y + 1):
             for x in range(ox, ox + tiles_x + 1):
                 if 0 <= x < self.world.width and 0 <= y < self.world.height and self.world.discovered[y][x]:
                     dx, dy = (x-ox)*ts, (y-oy)*ts
                     tile_key = 'floor' if self.world.tiles[y][x] == "." else 'wall'
-                    self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[tile_key])
+                    
+                    # Safety check if sprite exists
+                    if tile_key in self.sprites:
+                        self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[tile_key])
+                    
                     item = next((i for i in self.world.items if i.x == x and i.y == y), None)
-                    if item: self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[item.sprite_key])
+                    if item and item.sprite_key in self.sprites:
+                        self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[item.sprite_key])
 
         # Draw Enemies
         for e in self.world.enemies:
-            if self.world.discovered[e.y][e.x]:
-                self.canvas.create_image((e.x-ox)*ts, (e.y-oy)*ts, anchor="nw", image=self.sprites['monster'])
+            if self.world.discovered[e.y][e.x] and e.sprite_key in self.sprites:
+                self.canvas.create_image((e.x-ox)*ts, (e.y-oy)*ts, anchor="nw", image=self.sprites[e.sprite_key])
 
         # Draw Player
-        self.canvas.create_image((self.player.x-ox)*ts, (self.player.y-oy)*ts, anchor="nw", image=self.sprites['player'])
+        if 'player' in self.sprites:
+            self.canvas.create_image((self.player.x-ox)*ts, (self.player.y-oy)*ts, anchor="nw", image=self.sprites['player'])
         
         # Update UI Status
         stat = f"LVL: {self.level_num} | HP: {self.player.hp}/{SETTINGS['max_hp']} | POTIONS: {self.player.inventory['potions']} | GOLD: {self.player.gold} | {self.message}"
@@ -305,21 +323,31 @@ class GameLogic:
                 self.world.items.remove(item)
 
     def _load_assets(self):
-        filename = "roguelike_spritesheet.png"
-        if not os.path.exists(filename): return
+        """Dynamic sprite loader based on a 48x48 grid."""
+        filename = "dungeon_sheet.png" 
+        if not os.path.exists(filename):
+            print(f"File {filename} not found. Running without sprites.")
+            return
+
         try:
             sheet = Image.open(filename)
-            w, h = sheet.size
-            gw, gh = w / 8, h / 4
-            def get_s(col, row):
-                img = sheet.crop((int(col*gw), int(row*gh), int((col+1)*gw), int((row+1)*gh)))
-                img = img.resize((SETTINGS["tile_size"], SETTINGS["tile_size"]), Image.NEAREST)
-                return ImageTk.PhotoImage(img)
-            self.sprites = {
-                'player': get_s(0,0), 'monster': get_s(0,1), 'floor': get_s(0,2),
-                'wall': get_s(1,2), 'exit': get_s(4,2), 'gold': get_s(0,3), 'potion': get_s(1,3)
-            }
-        except: pass
+            # Ensure transparency support
+            if sheet.mode != 'RGBA':
+                sheet = sheet.convert('RGBA')
+
+            self.sprites = {}
+            for name, (col, row) in self.SPRITE_MAP.items():
+                left = col * self.sprite_size
+                top = row * self.sprite_size
+                right = left + self.sprite_size
+                bottom = top + self.sprite_size
+                
+                img = sheet.crop((left, top, right, bottom))
+                self.sprites[name] = ImageTk.PhotoImage(img)
+                
+            print(f"Successfully loaded {len(self.sprites)} sprites from {filename}.")
+        except Exception as e:
+            print(f"Error loading assets: {e}")
 
     def _render_minimap(self):
         if self.game_state != "playing" or not self.world.tiles:
@@ -340,7 +368,7 @@ class GameLogic:
                 self.mm_canvas.create_rectangle(i.x*sc, i.y*sc, i.x*sc+sc, i.y*sc+sc, fill=c, outline="")
         for e in self.world.enemies:
             if 0 <= e.y < len(self.world.discovered) and self.world.discovered[e.y][e.x]:
-                self.mm_canvas.create_rectangle(e.x*sc, e.y*sc, e.x*sc+sc, e.y*sc+sc, fill="red", outline="")
+                self.mm_canvas.create_rectangle(e.x*sc, e.y*sc, x*sc+sc, e.y*sc+sc, fill="red", outline="")
         if self.player and self.player_visible_on_mm:
             self.mm_canvas.create_rectangle(self.player.x*sc, self.player.y*sc, self.player.x*sc+sc, self.player.y*sc+sc, fill="cyan", outline="white")
 
