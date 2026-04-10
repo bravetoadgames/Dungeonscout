@@ -173,7 +173,7 @@ class GameWorld:
 class GameLogic:
     def __init__(self, root):
         self.root = root
-        self.root.title("DungeonScout - English Edition")
+        self.root.title("DungeonScout - Sprite Edition")
         self.world = GameWorld()
         self.player = None
         self.level_num = 1
@@ -182,18 +182,20 @@ class GameLogic:
         self.sprites = {}
         self.player_visible_on_mm = True
         
-        # Sprite coordinates (Column, Row) on a 48x48 grid
+        # Exacte mapping volgens jouw laatste spritesheet indeling:
         self.sprite_size = SETTINGS["tile_size"]
         self.SPRITE_MAP = {
-            'player':  (0, 0),
-            'monster': (1, 0),
-            'floor':   (0, 1),
-            'wall':    (1, 1),
-            'exit':    (2, 1),
-            'potion':  (0, 2),
-            'gold':    (1, 2),
+            'player':  (0, 0), # Rij 1, Kolom 1
+            'monster': (1, 0), # Rij 1, Kolom 2
+            # (2, 0) is leeg
+            'floor':   (0, 1), # Rij 2, Kolom 1
+            'wall':    (1, 1), # Rij 2, Kolom 2
+            'exit':    (2, 1), # Rij 2, Kolom 3
+            'potion':  (0, 2), # Rij 3, Kolom 1 <--- Aangepast
+            'gold':    (1, 2), # Rij 3, Kolom 2 <--- Aangepast
+            # (2, 2) is leeg
         }
-
+        
         self._setup_ui()
         self._load_assets()
         self.show_menu()
@@ -248,7 +250,6 @@ class GameLogic:
                     dx, dy = (x-ox)*ts, (y-oy)*ts
                     tile_key = 'floor' if self.world.tiles[y][x] == "." else 'wall'
                     
-                    # Safety check if sprite exists
                     if tile_key in self.sprites:
                         self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[tile_key])
                     
@@ -331,7 +332,6 @@ class GameLogic:
 
         try:
             sheet = Image.open(filename)
-            # Ensure transparency support
             if sheet.mode != 'RGBA':
                 sheet = sheet.convert('RGBA')
 
