@@ -153,12 +153,30 @@ class GameWorld:
         self.items.append(Item(tx, ty, ">"))
 
     def _populate_rooms(self, rooms):
+        """Vul kamers met monsters en meer loot."""
         for room in rooms:
-            rx, ry = room['x1'] + 1, room['y1'] + 1
-            chance = random.random()
-            if chance < 0.3: self.enemies.append(Enemy(rx, ry))
-            elif chance < 0.4: self.items.append(Item(rx, ry, "P"))
-            elif chance < 0.5: self.items.append(Item(rx, ry, "$"))
+            # We bepalen het midden van de kamer als startpunt
+            cx, cy = self._get_room_center(room)
+            
+            # 1. MONSTERS: 40% kans op een vijand
+            if random.random() < 0.4:
+                self.enemies.append(Enemy(cx, cy))
+            
+            # 2. GOUD: We rollen 1 tot 3 keer voor goud in elke kamer
+            for _ in range(random.randint(1, 3)):
+                if random.random() < 0.6: # 60% kans per rol
+                    rx = random.randint(room['x1'] + 1, room['x2'] - 1)
+                    ry = random.randint(room['y1'] + 1, room['y2'] - 1)
+                    # Alleen plaatsen als er niet al iets anders ligt
+                    if not any(i.x == rx and i.y == ry for i in self.items):
+                        self.items.append(Item(rx, ry, "$"))
+
+            # 3. POTIONS: 30% kans op een potion per kamer
+            if random.random() < 0.3:
+                rx = random.randint(room['x1'] + 1, room['x2'] - 1)
+                ry = random.randint(room['y1'] + 1, room['y2'] - 1)
+                if not any(i.x == rx and i.y == ry for i in self.items):
+                    self.items.append(Item(rx, ry, "P"))
 
     def _reset_level_data(self):
         self.tiles = [["#" for _ in range(self.width)] for _ in range(self.height)]
