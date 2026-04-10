@@ -4,7 +4,7 @@ import math
 import os
 from PIL import Image, ImageTk
 
-# --- CONFIGURATIE & BALANS ---
+# --- CONFIGURATION & BALANCE ---
 SETTINGS = {
     "tile_size": 48,
     "map_width": 40,
@@ -23,7 +23,7 @@ COLORS = {
 }
 
 # ==========================================
-# 1. ENTITY HIERARCHIE
+# 1. ENTITY HIERARCHY
 # ==========================================
 
 class Entity:
@@ -37,6 +37,7 @@ class Enemy(Entity):
         super().__init__(x, y, 'monster')
 
     def act(self, player, world):
+        """Simple AI: move towards player if within range."""
         dist = math.sqrt((self.x - player.x)**2 + (self.y - player.y)**2)
         if 1 < dist < 8:
             dx = 1 if player.x > self.x else -1 if player.x < self.x else 0
@@ -59,15 +60,16 @@ class Protagonist(Entity):
         self.inventory = {"potions": 0}
 
     def use_potion(self):
+        """Heal the player if potions are available."""
         if self.inventory["potions"] > 0 and self.hp < SETTINGS["max_hp"]:
             self.inventory["potions"] -= 1
             heal = 10
             self.hp = min(SETTINGS["max_hp"], self.hp + heal)
-            return f"Lekker! +{heal} HP."
+            return f"Refreshing! +{heal} HP."
         return None
 
 # ==========================================
-# 2. GAME WORLD (Data & Generatie)
+# 2. GAME WORLD (Data & Generation)
 # ==========================================
 
 class GameWorld:
@@ -80,6 +82,7 @@ class GameWorld:
         self.enemies = []
 
     def generate_level(self):
+        """Master function to orchestrate level generation."""
         self._reset_level_data()
         rooms = self._generate_rooms(max_rooms=25)
         if rooms:
@@ -89,11 +92,13 @@ class GameWorld:
         return (1, 1)
 
     def is_walkable(self, x, y):
+        """Check if a tile is passable."""
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x] == "."
         return False
 
     def update_fov(self, px, py):
+        """Update tiles visible to the player."""
         rad = SETTINGS["fov_radius"]
         for y in range(max(0, py - rad), min(self.height, py + rad + 1)):
             for x in range(max(0, px - rad), min(self.width, px + rad + 1)):
@@ -101,6 +106,7 @@ class GameWorld:
                     self.discovered[y][x] = True
 
     def _create_tunnel(self, r1, r2):
+        """Connect two rooms with horizontal and vertical corridors."""
         x1, y1 = self._get_room_center(r1)
         x2, y2 = self._get_room_center(r2)
         if random.random() > 0.5:
@@ -167,7 +173,7 @@ class GameWorld:
 class GameLogic:
     def __init__(self, root):
         self.root = root
-        self.root.title("Python Roguelike - Master Structure")
+        self.root.title("Python Roguelike - English Edition")
         self.world = GameWorld()
         self.player = None
         self.level_num = 1
@@ -207,21 +213,23 @@ class GameLogic:
         self.canvas.delete("all")
         if self.game_state == "gameover":
             self.mm_canvas.place_forget()
-            self.status_label.config(text=f"LVL: {self.level_num} | HP: 0/{SETTINGS['max_hp']} | GOUD: {self.player.gold} | GAME OVER", fg="red")
+            status = f"LVL: {self.level_num} | HP: 0/{SETTINGS['max_hp']} | GOLD: {self.player.gold} | YOU HAVE PERISHED"
+            self.status_label.config(text=status, fg="red")
             self.canvas.create_text(500, 350, text="GAME OVER", fill="red", font=("Courier", 40, "bold"))
             return
 
         ts = SETTINGS["tile_size"]
         
-        # Dynamische camera berekening (Punt 2)
-        c_width = self.canvas.winfo_width()
-        c_height = self.canvas.winfo_height()
+        # Dynamic camera calculation
+        c_width = max(self.canvas.winfo_width(), 100) # Fallback to 100 if not yet mapped
+        c_height = max(self.canvas.winfo_height(), 100)
         tiles_x = (c_width // ts) + 1
         tiles_y = (c_height // ts) + 1
         
         ox = self.player.x - (tiles_x // 2)
         oy = self.player.y - (tiles_y // 2)
 
+        # Draw World
         for y in range(oy, oy + tiles_y + 1):
             for x in range(ox, ox + tiles_x + 1):
                 if 0 <= x < self.world.width and 0 <= y < self.world.height and self.world.discovered[y][x]:
@@ -231,13 +239,16 @@ class GameLogic:
                     item = next((i for i in self.world.items if i.x == x and i.y == y), None)
                     if item: self.canvas.create_image(dx, dy, anchor="nw", image=self.sprites[item.sprite_key])
 
+        # Draw Enemies
         for e in self.world.enemies:
             if self.world.discovered[e.y][e.x]:
                 self.canvas.create_image((e.x-ox)*ts, (e.y-oy)*ts, anchor="nw", image=self.sprites['monster'])
 
+        # Draw Player
         self.canvas.create_image((self.player.x-ox)*ts, (self.player.y-oy)*ts, anchor="nw", image=self.sprites['player'])
         
-        stat = f"LVL: {self.level_num} | HP: {self.player.hp}/{SETTINGS['max_hp']} | POTIONS: {self.player.inventory['potions']} | GOUD: {self.player.gold} | {self.message}"
+        # Update UI Status
+        stat = f"LVL: {self.level_num} | HP: {self.player.hp}/{SETTINGS['max_hp']} | POTIONS: {self.player.inventory['potions']} | GOLD: {self.player.gold} | {self.message}"
         self.status_label.config(text=stat, fg="white")
         self._render_minimap()
 
@@ -245,25 +256,26 @@ class GameLogic:
         self.game_state = "menu"
         self.mm_canvas.place_forget()
         self.canvas.delete("all")
-        self.canvas.create_text(500, 340, text="DE DONKERE KERKER", fill="white", font=("Courier", 32, "bold"))
-        self.canvas.create_text(500, 400, text="[ DRUK OP ENTER ]", fill="gray", font=("Courier", 18))
+        self.canvas.create_text(500, 340, text="THE DARK DUNGEON", fill="white", font=("Courier", 32, "bold"))
+        self.canvas.create_text(500, 400, text="[ PRESS ENTER ]", fill="gray", font=("Courier", 18))
 
     def start_game(self):
         self.game_state = "playing"
         self.player = Protagonist(0, 0)
         self.level_num = 1
-        self.message = "Vind de trap omlaag!"
+        self.message = "Find the stairs down!"
         self.next_level()
         self._toggle_minimap_player_blink()
 
     def turn(self, dx, dy):
         nx, ny = self.player.x + dx, self.player.y + dy
         enemy = next((e for e in self.world.enemies if e.x == nx and e.y == ny), None)
+        
         if enemy:
             dmg = random.randint(4, 8)
             self.player.hp -= dmg
             self.world.enemies.remove(enemy)
-            self.message = f"Gevecht! -{dmg} HP."
+            self.message = f"Combat! -{dmg} HP."
         elif self.world.is_walkable(nx, ny):
             self.player.x, self.player.y = nx, ny
             self._check_items()
@@ -284,12 +296,12 @@ class GameLogic:
                 self.next_level()
             elif item.item_type == "P":
                 self.player.inventory["potions"] += 1
-                self.message = "Potion gevonden!"
+                self.message = "Found a potion!"
                 self.world.items.remove(item)
             elif item.item_type == "$":
                 val = random.randint(10, 25)
                 self.player.gold += val
-                self.message = f"Goud! (+{val})"
+                self.message = f"Gold! (+{val})"
                 self.world.items.remove(item)
 
     def _load_assets(self):
